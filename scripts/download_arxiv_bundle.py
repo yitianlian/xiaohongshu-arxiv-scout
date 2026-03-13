@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import zipfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import aiohttp
 
@@ -24,15 +24,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def download_one(session: aiohttp.ClientSession, paper: Dict[str, object], out_dir: Path) -> Dict[str, object]:
+async def download_one(
+    session: aiohttp.ClientSession, paper: Dict[str, object], out_dir: Path
+) -> Tuple[bool, Dict[str, object]]:
     arxiv_id = str(paper["arxiv_id"])
     title = sanitize_filename(str(paper["title"]), fallback=arxiv_id)
     filename = ensure_unique_path(out_dir / f"{title}.pdf")
     url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-    async with session.get(url) as response:
-        response.raise_for_status()
-        filename.write_bytes(await response.read())
-    return {"arxiv_id": arxiv_id, "title": paper["title"], "path": str(filename), "url": url}
+    last_error = None
+    for attempt in range(3):
+        try:
+            async with session.get(url) as response:
+                response.raise_for_status()
+                filename.write_bytes(await response.read())
+            return True, {"arxiv_id": arxiv_id, "title": paper["title"], "path": str(filename), "url": url}
+        except Exception as exc:
+            last_error = exc
+            await asyncio.sleep(2**attempt)
+    return False, {"arxiv_id": arxiv_id, "title": paper["title"], "url": url, "error": str(last_error)}
 
 
 def ensure_unique_path(path: Path) -> Path:
@@ -48,11 +57,22 @@ def ensure_unique_path(path: Path) -> Path:
         counter += 1
 
 
-async def download_all(papers: List[Dict[str, object]], out_dir: Path) -> List[Dict[str, object]]:
-    timeout = aiohttp.ClientTimeout(total=60)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+async def download_all(
+    papers: List[Dict[str, object]], out_dir: Path
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+    timeout = aiohttp.ClientTimeout(total=180)
+    connector = aiohttp.TCPConnector(limit=3)
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=False) as session:
         tasks = [download_one(session, paper, out_dir) for paper in papers]
-        return await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
+    downloaded: List[Dict[str, object]] = []
+    failed: List[Dict[str, object]] = []
+    for ok, payload in results:
+        if ok:
+            downloaded.append(payload)
+        else:
+            failed.append(payload)
+    return downloaded, failed
 
 
 def create_zip(files: List[Dict[str, object]], zip_path: Path) -> str:
@@ -75,7 +95,9 @@ def main() -> None:
         raise SystemExit("No resolved papers available for download.")
 
     downloads_dir = ensure_dir(workdir / "downloads")
-    downloaded = asyncio.run(download_all(papers, downloads_dir))
+    downloaded, failed = asyncio.run(download_all(papers, downloads_dir))
+    if not downloaded:
+        raise SystemExit(f"All downloads failed: {failed}")
 
     bundle_path = None
     if len(downloaded) > 1:
@@ -83,6 +105,7 @@ def main() -> None:
 
     payload = {
         "downloaded": downloaded,
+        "failed": failed,
         "bundle_path": bundle_path,
         "delivery_path": bundle_path or downloaded[0]["path"],
     }

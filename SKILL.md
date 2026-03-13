@@ -33,6 +33,16 @@ This skill turns a Xiaohongshu note link into downloadable arXiv PDFs. It is des
    python -m playwright install chromium
    ```
 
+   API-first lightweight install:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements-api.txt
+   python -m playwright install chromium
+   export OCR_SPACE_API_KEY=your_key_here
+   ```
+
 2. Create a working folder and capture the note:
 
    ```bash
@@ -75,8 +85,9 @@ If the page blocks automation or requires login, use Claude Code's browser tools
 
 Run `scripts/ocr_xhs_note.py <workdir>`.
 
-- Default OCR engine: PaddleOCR
-- Fallback OCR engine: Tesseract if PaddleOCR is unavailable
+- Default order: OCR.space API, then PaddleOCR, then Tesseract
+- Set `OCR_SPACE_API_KEY=...` to prefer OCR.space directly
+- Use `--provider paddleocr` or `--provider tesseract` if you need to force a local path
 
 This produces `ocr.json` with per-file text and merged lines.
 

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Dict, List
 
+import httpx
 from PIL import Image
 
 from xhs_arxiv_common import dedupe_keep_order, ensure_dir, load_json, save_json
@@ -15,6 +17,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run OCR on saved Xiaohongshu screenshots and images.")
     parser.add_argument("workdir", help="Workdir created by fetch_xiaohongshu_note.py")
     parser.add_argument("--lang", default="ch", help="OCR language for PaddleOCR")
+    parser.add_argument(
+        "--provider",
+        choices=["auto", "ocr-space", "paddleocr", "tesseract"],
+        default="auto",
+        help="OCR provider selection",
+    )
+    parser.add_argument(
+        "--ocr-space-api-key",
+        default=os.getenv("OCR_SPACE_API_KEY"),
+        help="OCR.space API key. If omitted, auto mode falls back to local OCR.",
+    )
     return parser.parse_args()
 
 
@@ -49,6 +62,33 @@ def run_paddleocr(images: List[Path], lang: str) -> Dict[str, List[str]]:
     return results
 
 
+def run_ocr_space(images: List[Path], api_key: str) -> Dict[str, List[str]]:
+    results: Dict[str, List[str]] = {}
+    headers = {"apikey": api_key}
+    language = "chs"
+    with httpx.Client(timeout=60) as client:
+        for image in images:
+            with image.open("rb") as handle:
+                files = {"file": (image.name, handle, "application/octet-stream")}
+                data = {
+                    "language": language,
+                    "isOverlayRequired": "false",
+                    "scale": "true",
+                    "OCREngine": "2",
+                }
+                response = client.post("https://api.ocr.space/parse/image", headers=headers, data=data, files=files)
+                response.raise_for_status()
+            payload = response.json()
+            parsed_results = payload.get("ParsedResults", [])
+            lines: List[str] = []
+            for item in parsed_results:
+                parsed_text = str(item.get("ParsedText", "")).strip()
+                if parsed_text:
+                    lines.extend(line.strip() for line in parsed_text.splitlines() if line.strip())
+            results[str(image)] = dedupe_keep_order(lines)
+    return results
+
+
 def run_tesseract(images: List[Path]) -> Dict[str, List[str]]:
     import pytesseract
 
@@ -68,12 +108,32 @@ def main() -> None:
     if not images:
         raise SystemExit("No screenshots or note images found for OCR.")
 
-    engine = "paddleocr"
-    try:
-        per_file = run_paddleocr(images, args.lang)
-    except Exception:
-        engine = "tesseract"
-        per_file = run_tesseract(images)
+    engine = None
+    per_file: Dict[str, List[str]]
+    provider_order = {
+        "ocr-space": ["ocr-space"],
+        "paddleocr": ["paddleocr"],
+        "tesseract": ["tesseract"],
+        "auto": ["ocr-space", "paddleocr", "tesseract"],
+    }[args.provider]
+
+    last_error = None
+    for provider in provider_order:
+        try:
+            if provider == "ocr-space":
+                if not args.ocr_space_api_key:
+                    raise RuntimeError("OCR.space API key is required for OCR API mode.")
+                per_file = run_ocr_space(images, args.ocr_space_api_key)
+            elif provider == "paddleocr":
+                per_file = run_paddleocr(images, args.lang)
+            else:
+                per_file = run_tesseract(images)
+            engine = provider
+            break
+        except Exception as exc:
+            last_error = exc
+    else:
+        raise SystemExit(f"All OCR providers failed: {last_error}")
 
     merged_lines: List[str] = []
     for lines in per_file.values():

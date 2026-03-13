@@ -26,11 +26,13 @@ Why it matters:
 
 - PaddleOCR official docs: https://www.paddleocr.ai/latest/en/index.html
 - PaddleOCR quick start and usage docs: https://www.paddleocr.ai/latest/en/version2.x/ppocr/quick_start.html
+- OCR.space free OCR API: https://ocr.space/OCRAPI
 
 Why it matters:
 
 - Xiaohongshu paper notes often place titles in image cards, not in selectable HTML text.
 - PaddleOCR handles mixed Chinese and English better than basic OCR-only fallbacks.
+- OCR.space offers a practical free API tier for API-first workflows and can reduce local setup friction.
 
 ## Xiaohongshu / note extraction references
 

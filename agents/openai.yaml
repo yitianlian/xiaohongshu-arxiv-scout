@@ -1,0 +1,5 @@
+interface:
+  display_name: "XHS arXiv Scout"
+  short_description: "Extract papers from Xiaohongshu note links"
+  default_prompt: "Use $xiaohongshu-arxiv-scout to extract paper titles from a Xiaohongshu link and download the matching arXiv PDFs."
+  brand_color: "#D9485F"

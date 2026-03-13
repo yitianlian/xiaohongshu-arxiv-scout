@@ -55,7 +55,7 @@ def download_images(image_urls: List[str], out_dir: Path) -> List[str]:
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
         )
     }
-    with httpx.Client(headers=headers, follow_redirects=True, timeout=30) as client:
+    with httpx.Client(headers=headers, follow_redirects=True, timeout=30, trust_env=False) as client:
         for index, image_url in enumerate(image_urls[:12], start=1):
             try:
                 response = client.get(image_url)

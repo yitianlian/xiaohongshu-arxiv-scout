@@ -66,7 +66,7 @@ def run_ocr_space(images: List[Path], api_key: str) -> Dict[str, List[str]]:
     results: Dict[str, List[str]] = {}
     headers = {"apikey": api_key}
     language = "chs"
-    with httpx.Client(timeout=60) as client:
+    with httpx.Client(timeout=60, trust_env=False) as client:
         for image in images:
             with image.open("rb") as handle:
                 files = {"file": (image.name, handle, "application/octet-stream")}

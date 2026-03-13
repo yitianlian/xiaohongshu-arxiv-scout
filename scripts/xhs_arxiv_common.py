@@ -42,7 +42,7 @@ def resolve_final_url(url: str, timeout: int = 20) -> str:
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
         )
     }
-    with httpx.Client(headers=headers, follow_redirects=True, timeout=timeout) as client:
+    with httpx.Client(headers=headers, follow_redirects=True, timeout=timeout, trust_env=False) as client:
         response = client.get(url)
         response.raise_for_status()
         return str(response.url)
